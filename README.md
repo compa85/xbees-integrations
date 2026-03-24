@@ -1,36 +1,91 @@
-This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
+# xbees-integrations
 
-## Getting Started
+CRM integration platform for [X-Bees](https://www.x-bees.com/) by Wildix.
 
-First, run the development server:
+Each integration is loaded as an iframe inside X-Bees and allows you to:
 
-```bash
-npm run dev
-# or
-yarn dev
-# or
-pnpm dev
-# or
-bun dev
+- **Search contacts** during a chat or call
+- **View contact details** (name, email, phone, company, …)
+- **Open the contact** directly in the external app with one click
+- **Create a new contact** in the CRM when no match is found
+
+The app is hosted at **[x-bees.compalab.dev](https://x-bees.compalab.dev)**.
+
+---
+
+## Available integrations
+
+| CRM                          | URL                              | Status       |
+| ---------------------------- | -------------------------------- | ------------ |
+| [Odoo](https://www.odoo.com) | `x-bees.compalab.dev/odoo` | ✅ Available |
+
+---
+
+## Architecture
+
+```
+xbees-integrations/
+├── src/
+│   ├── app/
+│   │   ├── api/proxy/[integration]/   # Server-side proxy (resolves CORS)
+│   │   └── [integration]/page.tsx     # iframe entry point for each CRM
+│   ├── core/                          # Types, adapter interface, crypto, proxy utils
+│   ├── integrations/[name]/           # CRM-specific logic
+│   ├── components/                    # Shared UI (shell, contact display, forms)
+│   └── hooks/                         # React hooks (credentials, search, X-Bees init)
 ```
 
-Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
+**Stack:** Next.js 15, React 18, TypeScript, MUI 5, `@wildix/xbees-connect`, Vercel
 
-You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
+### Credential security
 
-This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
+Integrations without SSO (e.g. Odoo with an API key) use the following flow:
 
-## Learn More
+1. The user enters credentials in the login form
+2. The server validates them against the CRM and encrypts them with **AES-256-GCM** using `ENCRYPTION_KEY`
+3. The encrypted blob is stored in X-Bees storage (never in plaintext on the client)
+4. Every proxy request sends the blob in the `x-credentials` header; the server decrypts it and calls the CRM
 
-To learn more about Next.js, take a look at the following resources:
+### Adding a new integration
 
-- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
-- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
+1. Create `src/integrations/[name]/` with:
+   - `[name]-types.ts` — CRM-specific types
+   - `[name]-api.ts` — server-side CRM API calls
+   - `[name]-adapter.ts` — implements `IntegrationAdapter` (client-side)
+   - `[Name]LoginForm.tsx` — authentication form
+2. Create `src/app/api/proxy/[name]/` with `auth`, `search`, and `contact` routes
+3. Create `src/app/[name]/page.tsx` with `<IntegrationShell adapter={...} LoginForm={...} />`
 
-You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
+---
 
-## Deploy on Vercel
+## Local development
 
-The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
+```bash
+# Install dependencies
+npm install
 
-Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
+# Copy the example env file and generate a key
+cp .env.local.example .env.local
+echo "ENCRYPTION_KEY=$(openssl rand -hex 32)" >> .env.local
+
+# Start the development server
+npm run dev
+```
+
+To test the integration inside X-Bees, use [ngrok](https://ngrok.com):
+
+```bash
+ngrok http 3000
+# Register the ngrok URL in WMS > PBX > Integrations > x-bees Client Integrations
+```
+
+### Useful commands
+
+| Command            | Description                  |
+| ------------------ | ---------------------------- |
+| `npm run dev`      | Start the development server |
+| `npm run build`    | Production build             |
+| `npm test`         | Run tests in watch mode      |
+| `npm run test:run` | Run tests once               |
+| `npm run lint`     | Check code with Biome        |
+| `npm run lint:fix` | Auto-fix linting issues      |
